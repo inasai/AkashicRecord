@@ -82,3 +82,4 @@
 ## Збірка
 
 Відкрийте папку в IntelliJ IDEA як Gradle-проєкт (Java 21) і виконайте завдання `build`; готовий JAR буде в `build/libs`. Для запуску з IDE є конфігурації `runClient` і `runServer`.
+# AkashicRecord
