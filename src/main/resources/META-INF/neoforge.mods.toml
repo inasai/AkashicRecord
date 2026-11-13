@@ -1,0 +1,32 @@
+modLoader="javafml"
+loaderVersion="[4,)"
+license="MIT"
+
+[[mods]]
+modId="akashic_records"
+version="1.0.0"
+displayName="Akashic Records"
+description='''
+"Akashic Chronicles" book: place an item inside to study it, then obtain that item in exchange for Knowledge points.
+'''
+
+[[dependencies.akashic_records]]
+modId="neoforge"
+type="required"
+versionRange="[21.1.0,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.akashic_records]]
+modId="minecraft"
+type="required"
+versionRange="[1.21.1]"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.akashic_records]]
+modId="projecte"
+type="optional"
+versionRange="[0,)"
+ordering="AFTER"
+side="BOTH"
