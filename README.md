@@ -1,6 +1,8 @@
-# Хроніки Акаши (Akashic Records)
+# Хроніки Акаши
 
-Мод для Minecraft 1.21.1 на NeoForge (Java 21). Спрощений аналог системи EMC та «алхімії» з ProjectE: лише вивчення предметів і отримання їх за бали Знань.
+[![CurseForge](https://img.shields.io/badge/CurseForge-Download-orange?logo=curseforge&logoColor=white)](https://www.curseforge.com/minecraft/mc-mods/akashic-record) [![Modrinth](https://img.shields.io/badge/Modrinth-Download-5da545?logo=modrinth&logoColor=white)](https://modrinth.com/mod/akashic-record)
+
+од для Minecraft 1.21.1 на NeoForge (Java 21). Спрощений аналог системи EMC та «алхімії» з ProjectE: лише вивчення предметів і отримання їх за бали Знань.
 
 ## Як це працює
 
@@ -78,8 +80,3 @@
 ## Конфіг
 
 `akashic_records-common.toml`: `useProjectE`, `deriveFromRecipes`, `storageSlots`, `enchantedBookBase`.
-
-## Збірка
-
-Відкрийте папку в IntelliJ IDEA як Gradle-проєкт (Java 21) і виконайте завдання `build`; готовий JAR буде в `build/libs`. Для запуску з IDE є конфігурації `runClient` і `runServer`.
-# AkashicRecord
