@@ -28,5 +28,15 @@
   "gui.akashic_records.learn_hint": "ЛКМ: вивчити 1 шт., Shift+ЛКМ: усі (%s)",
   "gui.akashic_records.click_hint": "ЛКМ: 1 шт., Shift+ЛКМ: стак, ПКМ: половина стака",
   "command.akashic_records.recalc": "Цінність предметів перераховано",
-  "command.akashic_records.add": "Додано %s Знань"
+  "command.akashic_records.add": "Додано %s Знань",
+  "gui.akashic_records.craft_tab": "Створення",
+  "gui.akashic_records.alchemy_tab": "Алхімія",
+  "gui.akashic_records.learned_tab": "Вивчене",
+  "gui.akashic_records.learned_empty": "Ще нічого не вивчено. Почніть із розділу «Вивчити предмет» на першій сторінці.",
+  "gui.akashic_records.craft_from_storage": "Зі сховища",
+  "gui.akashic_records.craft_from_knowledge": "За Знання",
+  "gui.akashic_records.craft_empty": "Немає джерел. Вивчайте предмети або кладіть їх у сховище.",
+  "gui.akashic_records.craft_pick_hint": "ЛКМ: узяти 1 шт. на курсор, Shift+ЛКМ: стак, ПКМ: половину",
+  "gui.akashic_records.craft_missing": "Не вистачає інгредієнтів у інвентарі, сховищі та Знаннях",
+  "gui.akashic_records.hud_no_value": "Без цінності"
 }

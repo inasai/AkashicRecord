@@ -8,6 +8,7 @@ public final class AkashicConfig {
     public static final ModConfigSpec.BooleanValue DERIVE_FROM_RECIPES;
     public static final ModConfigSpec.IntValue STORAGE_SLOTS;
     public static final ModConfigSpec.LongValue ENCHANTED_BOOK_BASE;
+    public static final ModConfigSpec.BooleanValue UNLOCK_ALL_RECIPES;
 
     static {
         ModConfigSpec.Builder b = new ModConfigSpec.Builder();
@@ -32,6 +33,11 @@ public final class AkashicConfig {
                         "Знання = ((base * 10) / вага_зачарування) * 2^(рівень - 1).",
                         "Вага береться з реєстрації зачарування в грі. Після зміни виконайте /akashic recalc.")
                 .defineInRange("enchantedBookBase", 8192L, 1L, 1_000_000_000L);
+
+        UNLOCK_ALL_RECIPES = b
+                .comment("Відкривати гравцю всі рецепти верстака, коли він відкриває книгу,",
+                        "щоб книга рецептів на сторінці «Створення» показувала їх усі (як JEI).")
+                .define("unlockAllRecipes", true);
 
         SPEC = b.build();
     }

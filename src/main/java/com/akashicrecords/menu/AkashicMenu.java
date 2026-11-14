@@ -10,36 +10,232 @@ import com.akashicrecords.knowledge.KnowledgeManager;
 import com.akashicrecords.network.ModNetwork;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.Mth;
+import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.entity.player.StackedContents;
+import net.minecraft.world.inventory.CraftingContainer;
+import net.minecraft.world.inventory.RecipeBookMenu;
+import net.minecraft.world.inventory.RecipeBookType;
+import net.minecraft.world.inventory.ResultContainer;
+import net.minecraft.world.inventory.ResultSlot;
 import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.inventory.TransientCraftingContainer;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.CraftingInput;
+import net.minecraft.world.item.crafting.CraftingRecipe;
+import net.minecraft.world.item.crafting.RecipeHolder;
+import net.minecraft.world.item.crafting.RecipeType;
+import net.minecraft.world.level.Level;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /**
- * Меню книги. Самі комірки гравця тут невидимі: вони потрібні лише для того,
- * щоб сервер синхронізував інвентар із клієнтом, поки відкрита книга.
+ * Меню книги. Влаштоване як меню верстака (ті самі номери комірок), щоб працювала ванільна книга рецептів:
+ * комірка 0 це результат, 1..9 сітка 3x3, 10..45 інвентар гравця. Інвентар у книзі не малюється,
+ * але потрібен для синхронізації. Сітка й результат видимі лише на сторінці «Створення».
  */
-public class AkashicMenu extends AbstractContainerMenu {
+public class AkashicMenu extends RecipeBookMenu<CraftingInput, CraftingRecipe> {
+    /** Розташування сітки й результату (відносно лівого верхнього кута книги). */
+    public static final int GRID_SLOT_X = 165;
+    public static final int GRID_SLOT_Y = 43;
+    public static final int RESULT_SLOT_X = 250;
+    public static final int RESULT_SLOT_Y = 61;
+
+    private static final int RESULT_SLOT = 0;
+    private static final int INV_START = 10;
+    private static final int INV_END = 46;
+
+    private final TransientCraftingContainer craftSlots = new TransientCraftingContainer(this, 3, 3);
+    private final ResultContainer resultSlots = new ResultContainer();
+    private final Player player;
+
+    /** Лише клієнт: чи відкрита сторінка «Створення» (від цього залежить, чи видно комірки). */
+    public boolean craftingPage;
 
     public AkashicMenu(int containerId, Inventory inventory) {
         super(ModMenus.AKASHIC.get(), containerId);
-        for (int i = 0; i < 36; i++) {
-            this.addSlot(new Slot(inventory, i, 0, 0) {
-                @Override
-                public boolean isActive() {
-                    return false;
-                }
-            });
+        this.player = inventory.player;
+
+        this.addSlot(new ResultSlot(inventory.player, this.craftSlots, this.resultSlots, 0, RESULT_SLOT_X, RESULT_SLOT_Y) {
+            @Override
+            public boolean isActive() {
+                return craftingPage;
+            }
+        });
+        for (int row = 0; row < 3; row++) {
+            for (int col = 0; col < 3; col++) {
+                this.addSlot(new Slot(this.craftSlots, col + row * 3, GRID_SLOT_X + col * 18, GRID_SLOT_Y + row * 18) {
+                    @Override
+                    public boolean isActive() {
+                        return craftingPage;
+                    }
+                });
+            }
         }
+        // Інвентар: спершу основні 27 комірок, потім панель швидкого доступу (як у верстака)
+        for (int i = 9; i < 36; i++) {
+            this.addSlot(hiddenSlot(inventory, i));
+        }
+        for (int i = 0; i < 9; i++) {
+            this.addSlot(hiddenSlot(inventory, i));
+        }
+    }
+
+    private static Slot hiddenSlot(Inventory inventory, int index) {
+        return new Slot(inventory, index, 0, 0) {
+            @Override
+            public boolean isActive() {
+                return false;
+            }
+        };
+    }
+
+    public CraftingContainer craftSlots() {
+        return craftSlots;
+    }
+
+    // ------------------------------------------------------------- крафт
+
+    @Override
+    public void slotsChanged(Container container) {
+        if (container == craftSlots) {
+            updateResult();
+        }
+        super.slotsChanged(container);
+    }
+
+    private void updateResult() {
+        Level level = player.level();
+        if (level.isClientSide || !(player instanceof ServerPlayer serverPlayer)) {
+            return;
+        }
+        CraftingInput input = craftSlots.asCraftInput();
+        ItemStack result = ItemStack.EMPTY;
+        Optional<RecipeHolder<CraftingRecipe>> recipe =
+                level.getServer().getRecipeManager().getRecipeFor(RecipeType.CRAFTING, input, level);
+        if (recipe.isPresent()) {
+            ItemStack assembled = recipe.get().value().assemble(input, level.registryAccess());
+            if (assembled.isItemEnabled(level.enabledFeatures())) {
+                result = assembled;
+            }
+        }
+        resultSlots.setItem(0, result);
+        setRemoteSlot(0, result);
+        serverPlayer.connection.send(new ClientboundContainerSetSlotPacket(containerId, incrementStateId(), 0, result));
+    }
+
+    @Override
+    public void handlePlacement(boolean placeAll, RecipeHolder<?> recipe, ServerPlayer serverPlayer) {
+        CraftSources.place(serverPlayer, this, craftSlots, recipe.value(), placeAll);
+    }
+
+    @Override
+    public void fillCraftSlotsStackedContents(StackedContents contents) {
+        craftSlots.fillStackedContents(contents);
+        CraftSources.fillStackedContents(player, contents);
+    }
+
+    @Override
+    public void clearCraftingContent() {
+        craftSlots.clearContent();
+        resultSlots.clearContent();
+    }
+
+    @Override
+    public boolean recipeMatches(RecipeHolder<CraftingRecipe> recipe) {
+        return recipe.value().matches(craftSlots.asCraftInput(), player.level());
+    }
+
+    @Override
+    public int getResultSlotIndex() {
+        return RESULT_SLOT;
+    }
+
+    @Override
+    public int getGridWidth() {
+        return craftSlots.getWidth();
+    }
+
+    @Override
+    public int getGridHeight() {
+        return craftSlots.getHeight();
+    }
+
+    @Override
+    public int getSize() {
+        return 10;
+    }
+
+    @Override
+    public RecipeBookType getRecipeBookType() {
+        return RecipeBookType.CRAFTING;
+    }
+
+    @Override
+    public boolean shouldMoveToInventory(int slotIndex) {
+        return slotIndex != RESULT_SLOT;
+    }
+
+    @Override
+    public void removed(Player removedBy) {
+        super.removed(removedBy);
+        this.clearContainer(removedBy, craftSlots);
+    }
+
+    @Override
+    public ItemStack quickMoveStack(Player quickPlayer, int index) {
+        ItemStack copy = ItemStack.EMPTY;
+        Slot slot = this.slots.get(index);
+        if (slot != null && slot.hasItem()) {
+            ItemStack stack = slot.getItem();
+            copy = stack.copy();
+            if (index == RESULT_SLOT) {
+                if (!this.moveItemStackTo(stack, INV_START, INV_END, true)) {
+                    return ItemStack.EMPTY;
+                }
+                slot.onQuickCraft(stack, copy);
+            } else if (index >= INV_START && index < INV_END) {
+                if (!this.moveItemStackTo(stack, 1, 10, false)) {
+                    if (index < 37) {
+                        if (!this.moveItemStackTo(stack, 37, INV_END, false)) {
+                            return ItemStack.EMPTY;
+                        }
+                    } else if (!this.moveItemStackTo(stack, INV_START, 37, false)) {
+                        return ItemStack.EMPTY;
+                    }
+                }
+            } else if (!this.moveItemStackTo(stack, INV_START, INV_END, false)) {
+                return ItemStack.EMPTY;
+            }
+
+            if (stack.isEmpty()) {
+                slot.setByPlayer(ItemStack.EMPTY);
+            } else {
+                slot.setChanged();
+            }
+            if (stack.getCount() == copy.getCount()) {
+                return ItemStack.EMPTY;
+            }
+            slot.onTake(quickPlayer, stack);
+            if (index == RESULT_SLOT) {
+                quickPlayer.drop(stack, false);
+            }
+        }
+        return copy;
+    }
+
+    @Override
+    public boolean stillValid(Player stillValidPlayer) {
+        return true;
     }
 
     /**
@@ -84,8 +280,7 @@ public class AkashicMenu extends AbstractContainerMenu {
         data.addPoints(saturatedMul(value, removed));
         data.learn(key);
 
-        serverPlayer.level().playSound(null, serverPlayer.blockPosition(),
-                SoundEvents.ENCHANTMENT_TABLE_USE, SoundSource.PLAYERS, 0.6F, 1.2F);
+        playBookSound(serverPlayer, SoundEvents.BOOK_PUT, 1.0F);
         ModNetwork.syncKnowledge(serverPlayer);
     }
 
@@ -117,8 +312,7 @@ public class AkashicMenu extends AbstractContainerMenu {
         }
 
         serverPlayer.getInventory().placeItemBackInInventory(prototype.copyWithCount(amount));
-        serverPlayer.level().playSound(null, serverPlayer.blockPosition(),
-                SoundEvents.ITEM_PICKUP, SoundSource.PLAYERS, 0.3F, 1.0F);
+        playBookSound(serverPlayer, SoundEvents.BOOK_PAGE_TURN, 1.0F);
         ModNetwork.syncKnowledge(serverPlayer);
     }
 
@@ -174,8 +368,7 @@ public class AkashicMenu extends AbstractContainerMenu {
             serverPlayer.displayClientMessage(Component.translatable("gui.akashic_records.storage_full"), true);
         }
         if (moved > 0) {
-            serverPlayer.level().playSound(null, serverPlayer.blockPosition(),
-                    SoundEvents.ITEM_PICKUP, SoundSource.PLAYERS, 0.3F, 0.8F);
+            playBookSound(serverPlayer, SoundEvents.BOOK_PUT, 1.0F);
         }
         ModNetwork.syncStorage(serverPlayer);
     }
@@ -193,19 +386,71 @@ public class AkashicMenu extends AbstractContainerMenu {
 
         ItemStack result = storage.extract(index, Mth.clamp(amount, 1, stored.getCount()));
         serverPlayer.getInventory().placeItemBackInInventory(result);
-        serverPlayer.level().playSound(null, serverPlayer.blockPosition(),
-                SoundEvents.ITEM_PICKUP, SoundSource.PLAYERS, 0.3F, 1.0F);
+        playBookSound(serverPlayer, SoundEvents.BOOK_PAGE_TURN, 1.0F);
         ModNetwork.syncStorage(serverPlayer);
     }
 
-    @Override
-    public ItemStack quickMoveStack(Player player, int index) {
-        return ItemStack.EMPTY;
+    /** Бере предмет зі сховища або за Знання й кладе його на курсор (звідти в сітку крафту). */
+    public void pick(ServerPlayer serverPlayer, boolean fromStorage, ResourceLocation key, int index, int requested) {
+        ItemStack carried = getCarried();
+        if (fromStorage) {
+            StorageData storage = serverPlayer.getData(ModAttachments.STORAGE);
+            if (index < 0 || index >= storage.stacks().size()) {
+                return;
+            }
+            ItemStack stored = storage.stacks().get(index);
+            if (!BuiltInRegistries.ITEM.getKey(stored.getItem()).equals(key)) {
+                return;
+            }
+            int room = roomFor(carried, stored);
+            int amount = Math.min(Math.min(requested, stored.getCount()), room);
+            if (amount <= 0) {
+                return;
+            }
+            ItemStack taken = storage.extract(index, amount);
+            setCarried(merge(carried, taken));
+            ModNetwork.syncStorage(serverPlayer);
+        } else {
+            long value = KnowledgeManager.getValue(key);
+            KnowledgeData data = serverPlayer.getData(ModAttachments.KNOWLEDGE);
+            if (value <= 0 || !data.hasLearned(key)) {
+                return;
+            }
+            ItemStack prototype = KnowledgeKeys.stackFor(key, serverPlayer.level().registryAccess());
+            if (prototype.isEmpty()) {
+                return;
+            }
+            int amount = Math.min(requested, roomFor(carried, prototype));
+            amount = (int) Math.min(amount, data.getPoints() / value);
+            if (amount <= 0 || !data.spend(value * amount)) {
+                return;
+            }
+            setCarried(merge(carried, prototype.copyWithCount(amount)));
+            ModNetwork.syncKnowledge(serverPlayer);
+        }
+        playBookSound(serverPlayer, SoundEvents.BOOK_PAGE_TURN, 1.0F);
     }
 
-    @Override
-    public boolean stillValid(Player player) {
-        return true;
+    /** Скільки ще предметів такого виду влізе на курсор. */
+    private static int roomFor(ItemStack carried, ItemStack incoming) {
+        if (carried.isEmpty()) {
+            return incoming.getMaxStackSize();
+        }
+        if (!ItemStack.isSameItemSameComponents(carried, incoming)) {
+            return 0;
+        }
+        return carried.getMaxStackSize() - carried.getCount();
+    }
+
+    private static ItemStack merge(ItemStack carried, ItemStack added) {
+        if (carried.isEmpty()) {
+            return added;
+        }
+        return carried.copyWithCount(carried.getCount() + added.getCount());
+    }
+
+    private static void playBookSound(ServerPlayer serverPlayer, net.minecraft.sounds.SoundEvent sound, float pitch) {
+        serverPlayer.level().playSound(null, serverPlayer.blockPosition(), sound, SoundSource.PLAYERS, 0.8F, pitch);
     }
 
     private static long saturatedMul(long a, long b) {

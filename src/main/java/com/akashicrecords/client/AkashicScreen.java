@@ -5,6 +5,7 @@ import com.akashicrecords.knowledge.KnowledgeKeys;
 import com.akashicrecords.knowledge.KnowledgeManager;
 import com.akashicrecords.menu.AkashicMenu;
 import com.akashicrecords.network.LearnItemPayload;
+import com.akashicrecords.network.PickSourcePayload;
 import com.akashicrecords.network.StorageDepositPayload;
 import com.akashicrecords.network.StorageWithdrawPayload;
 import com.akashicrecords.network.TakeItemPayload;
@@ -13,9 +14,14 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.ImageButton;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.gui.screens.inventory.PageButton;
+import net.minecraft.client.gui.screens.recipebook.RecipeBookComponent;
+import net.minecraft.client.gui.screens.recipebook.RecipeUpdateListener;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
+import net.minecraft.client.sounds.SoundManager;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
@@ -23,6 +29,8 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.Item;
@@ -47,7 +55,7 @@ import java.util.Set;
  * Інтерфейс у вигляді розкритої книги: ліворуч категорії, праворуч рядки предметів.
  * Категорія «Вивчити предмет» показує праворуч предмети з інвентаря гравця.
  */
-public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> {
+public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> implements RecipeUpdateListener {
     // Розкладка (відносно лівого верхнього кута книги)
     private static final int PAGE_L_X = 8;
     private static final int PAGE_R_X = 156;
@@ -58,13 +66,15 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> {
     private static final int CAT_X = 16;
     private static final int CAT_Y = 42;
     private static final int CAT_ROW_H = 15;
-    private static final int CAT_ROWS = 9;
+    private static final int CAT_ROWS = 8;
     private static final int CAT_W = 122;
 
     private static final int GRID_X = 164;
     private static final int GRID_Y = 44;
+    private static final int CRAFT_LIST_Y = 100;
     private static final int COLS = 7;
-    private static final int ROWS = 8;
+    private static final int ROWS = 7;
+    private static final int CRAFT_ROWS = 4;
     private static final int CELL = 18;
 
     // Кольори
@@ -85,9 +95,12 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> {
     private static final int CELL_BORDER = 0xFFB9A474;
     private static final int CELL_BG = 0xFFDCCB9C;
 
-    private enum Kind { LEARN, STORAGE, ALL, POTIONS, BOOKS, TAB, OTHER }
+    /** Сторінки книги: головна, «Алхімія», «Вивчене». Перемикаються стрілками внизу. */
+    private enum Page { MAIN, ALCHEMY, LEARNED }
 
-    private enum RowType { HEADER, DEPOSIT, STORED }
+    private enum Kind { LEARN, CRAFT, STORAGE, ALL, NAV, POTIONS, BOOKS, TAB, OTHER }
+
+    private enum RowType { HEADER, DEPOSIT, STORED, SRC_STORE, SRC_KNOW }
 
     /** Категорія ліворуч. keys: що вивчено в цій категорії (id предмета або ключ варіанта з KnowledgeKeys). */
     private record Entry(String key, Kind kind, Component label, ItemStack icon, List<ResourceLocation> keys) {
@@ -100,7 +113,7 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> {
     }
 
     /** Рядок сторінки «Сховище»: заголовок розділу, предмет з інвентаря або запис сховища. ref = комірка інвентаря або індекс запису. */
-    private record StorageRow(RowType type, Component header, ItemStack stack, int ref) {
+    private record StorageRow(RowType type, Component header, ItemStack stack, int ref, ResourceLocation key) {
     }
 
     private final List<TabInfo> tabs = new ArrayList<>();
@@ -110,6 +123,14 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> {
     private final List<StorageRow> storageRows = new ArrayList<>();
     private final Map<ResourceLocation, String> nameCache = new HashMap<>();
     private final Map<ResourceLocation, ItemStack> stackCache = new HashMap<>();
+
+    private final RecipeBookComponent recipeBookComponent = new RecipeBookComponent();
+    private boolean widthTooNarrow;
+    private ImageButton recipeButton;
+    private PageButton backButton;
+    private PageButton forwardButton;
+    private Page page = Page.MAIN;
+    private List<ItemStack> lastStorage = List.of();
 
     private String selectedKey = "all";
     private int catScroll;
@@ -139,7 +160,91 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> {
         });
         addRenderableWidget(search);
 
+        this.widthTooNarrow = this.width < 450; // книга широка, тому книга рецептів потребує місця ліворуч
+        recipeBookComponent.init(this.width, this.height, this.minecraft, this.widthTooNarrow, this.menu);
+        this.addWidget(recipeBookComponent);
+
+        recipeButton = addRenderableWidget(new ImageButton(0, 0, 20, 18, RecipeBookComponent.RECIPE_BUTTON_SPRITES, button -> {
+            recipeBookComponent.toggleVisibility();
+            relayout();
+        }) {
+            @Override
+            public void playDownSound(SoundManager soundManager) {
+                soundManager.play(SimpleSoundInstance.forUI(SoundEvents.BOOK_PAGE_TURN, 1.0F));
+            }
+        });
+        // Стрілки як у «Книги й пера»; звук перегортання вмикає сама кнопка
+        backButton = addRenderableWidget(new PageButton(0, 0, false, button -> turnPage(-1), true));
+        forwardButton = addRenderableWidget(new PageButton(0, 0, true, button -> turnPage(1), true));
+
         rebuild();
+        relayout();
+    }
+
+    @Override
+    public void recipesUpdated() {
+        recipeBookComponent.recipesUpdated();
+    }
+
+    @Override
+    public RecipeBookComponent getRecipeBookComponent() {
+        return recipeBookComponent;
+    }
+
+    private boolean craftMode() {
+        Entry entry = selected();
+        return entry != null && entry.kind() == Kind.CRAFT;
+    }
+
+    private int listTop() {
+        return craftMode() ? CRAFT_LIST_Y : GRID_Y;
+    }
+
+    private int listRows() {
+        return craftMode() ? CRAFT_ROWS : ROWS;
+    }
+
+    /** Розставляє елементи, що залежать від сторінки: книга рецептів зсуває книгу вправо лише на «Створенні». */
+    private void relayout() {
+        boolean craft = craftMode();
+        this.leftPos = craft
+                ? recipeBookComponent.updateScreenPosition(this.width, this.imageWidth)
+                : (this.width - this.imageWidth) / 2;
+
+        search.setX(leftPos + GRID_X);
+        search.setY(topPos + 22);
+        search.setWidth(craft ? 100 : 124);
+
+        recipeButton.visible = craft;
+        recipeButton.setPosition(leftPos + PAGE_R_X + PAGE_W - 28, topPos + 19);
+
+        backButton.visible = page.ordinal() > 0;
+        backButton.setPosition(leftPos + PAGE_L_X + 10, topPos + PAGE_Y + PAGE_H - 17);
+        forwardButton.visible = page.ordinal() < Page.values().length - 1;
+        forwardButton.setPosition(leftPos + PAGE_R_X + PAGE_W - 10 - 23, topPos + PAGE_Y + PAGE_H - 17);
+
+        this.menu.craftingPage = craft;
+    }
+
+    private void turnPage(int direction) {
+        int target = Math.max(0, Math.min(Page.values().length - 1, page.ordinal() + direction));
+        setPage(Page.values()[target]);
+    }
+
+    private void setPage(Page target) {
+        page = target;
+        selectedKey = "";
+        catScroll = 0;
+        rightScroll = 0;
+        rebuild();
+        relayout();
+    }
+
+    private String defaultKey() {
+        if (page == Page.MAIN) {
+            return "all";
+        }
+        return entries.isEmpty() ? "" : entries.get(0).key();
     }
 
     /** Категорії беруться з вкладок творчого інвентаря, тож збігаються з ванільними та модовими. */
@@ -223,53 +328,60 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> {
         bookKeys.sort(byName);
 
         entries.clear();
-        entries.add(new Entry("learn", Kind.LEARN, Component.translatable("gui.akashic_records.learn_tab"),
-                new ItemStack(Items.WRITABLE_BOOK), List.of()));
-
-        entries.add(new Entry("storage", Kind.STORAGE, Component.translatable("gui.akashic_records.storage_tab"),
-                new ItemStack(Items.ENDER_CHEST), List.of()));
-
         List<ResourceLocation> all = new ArrayList<>(itemKeys);
         all.addAll(potionKeys);
         all.addAll(bookKeys);
         all.sort(byName);
-        entries.add(new Entry("all", Kind.ALL, Component.translatable("gui.akashic_records.all_tab"),
-                new ItemStack(Items.BOOKSHELF), all));
 
-        entries.add(new Entry("potions", Kind.POTIONS, Component.translatable("gui.akashic_records.potions_tab"),
-                new ItemStack(Items.BREWING_STAND), potionKeys));
-        entries.add(new Entry("books", Kind.BOOKS, Component.translatable("gui.akashic_records.books_tab"),
-                new ItemStack(Items.ENCHANTED_BOOK), bookKeys));
-
-        Set<ResourceLocation> inAnyTab = new HashSet<>();
-        for (TabInfo tab : tabs) {
-            List<ResourceLocation> list = new ArrayList<>();
-            for (Item item : tab.items()) {
-                ResourceLocation key = BuiltInRegistries.ITEM.getKey(item);
-                inAnyTab.add(key);
-                if (itemKeys.contains(key)) {
-                    list.add(key);
+        if (page == Page.MAIN) {
+            entries.add(new Entry("learn", Kind.LEARN, Component.translatable("gui.akashic_records.learn_tab"),
+                    new ItemStack(Items.WRITABLE_BOOK), List.of()));
+            entries.add(new Entry("craft", Kind.CRAFT, Component.translatable("gui.akashic_records.craft_tab"),
+                    new ItemStack(Items.CRAFTING_TABLE), List.of()));
+            entries.add(new Entry("storage", Kind.STORAGE, Component.translatable("gui.akashic_records.storage_tab"),
+                    new ItemStack(Items.ENDER_CHEST), List.of()));
+            entries.add(new Entry("all", Kind.ALL, Component.translatable("gui.akashic_records.all_tab"),
+                    new ItemStack(Items.BOOKSHELF), all));
+            entries.add(new Entry("nav:alchemy", Kind.NAV, Component.translatable("gui.akashic_records.alchemy_tab"),
+                    new ItemStack(Items.BREWING_STAND), List.of()));
+            entries.add(new Entry("nav:learned", Kind.NAV, Component.translatable("gui.akashic_records.learned_tab"),
+                    new ItemStack(Items.KNOWLEDGE_BOOK), List.of()));
+        } else if (page == Page.ALCHEMY) {
+            entries.add(new Entry("potions", Kind.POTIONS, Component.translatable("gui.akashic_records.potions_tab"),
+                    new ItemStack(Items.POTION), potionKeys));
+            entries.add(new Entry("books", Kind.BOOKS, Component.translatable("gui.akashic_records.books_tab"),
+                    new ItemStack(Items.ENCHANTED_BOOK), bookKeys));
+        } else {
+            Set<ResourceLocation> inAnyTab = new HashSet<>();
+            for (TabInfo tab : tabs) {
+                List<ResourceLocation> list = new ArrayList<>();
+                for (Item item : tab.items()) {
+                    ResourceLocation key = BuiltInRegistries.ITEM.getKey(item);
+                    inAnyTab.add(key);
+                    if (itemKeys.contains(key)) {
+                        list.add(key);
+                    }
+                }
+                if (!list.isEmpty()) {
+                    entries.add(new Entry("tab:" + tab.name().getString(), Kind.TAB, tab.name(), tab.icon(), list));
                 }
             }
-            if (!list.isEmpty()) {
-                entries.add(new Entry("tab:" + tab.name().getString(), Kind.TAB, tab.name(), tab.icon(), list));
-            }
-        }
 
-        List<ResourceLocation> other = new ArrayList<>();
-        for (ResourceLocation key : itemKeys) {
-            if (!inAnyTab.contains(key)) {
-                other.add(key);
+            List<ResourceLocation> other = new ArrayList<>();
+            for (ResourceLocation key : itemKeys) {
+                if (!inAnyTab.contains(key)) {
+                    other.add(key);
+                }
             }
-        }
-        if (!other.isEmpty()) {
-            other.sort(byName);
-            entries.add(new Entry("other", Kind.OTHER, Component.translatable("gui.akashic_records.other_tab"),
-                    new ItemStack(Items.CHEST), other));
+            if (!other.isEmpty()) {
+                other.sort(byName);
+                entries.add(new Entry("other", Kind.OTHER, Component.translatable("gui.akashic_records.other_tab"),
+                        new ItemStack(Items.CHEST), other));
+            }
         }
 
         if (selected() == null) {
-            selectedKey = "all";
+            selectedKey = defaultKey();
         }
         catScroll = Math.min(catScroll, maxCatScroll());
         refreshShown();
@@ -291,7 +403,7 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> {
 
     private boolean storageMode() {
         Entry entry = selected();
-        return entry != null && entry.kind() == Kind.STORAGE;
+        return entry != null && (entry.kind() == Kind.STORAGE || entry.kind() == Kind.CRAFT);
     }
 
     private int rightSize() {
@@ -335,7 +447,7 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> {
         List<StorageRow> deposit = new ArrayList<>();
         for (int i = 0; i < groups.size(); i++) {
             if (matchesStack(query, groups.get(i))) {
-                deposit.add(new StorageRow(RowType.DEPOSIT, null, groups.get(i), slots.get(i)));
+                deposit.add(new StorageRow(RowType.DEPOSIT, null, groups.get(i), slots.get(i), null));
             }
         }
 
@@ -343,19 +455,54 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> {
         List<StorageRow> withdraw = new ArrayList<>();
         for (int i = 0; i < stored.size(); i++) {
             if (matchesStack(query, stored.get(i))) {
-                withdraw.add(new StorageRow(RowType.STORED, null, stored.get(i), i));
+                withdraw.add(new StorageRow(RowType.STORED, null, stored.get(i), i, null));
             }
         }
 
         if (!deposit.isEmpty()) {
-            storageRows.add(new StorageRow(RowType.HEADER, Component.translatable("gui.akashic_records.storage_inventory"), ItemStack.EMPTY, -1));
+            storageRows.add(new StorageRow(RowType.HEADER, Component.translatable("gui.akashic_records.storage_inventory"), ItemStack.EMPTY, -1, null));
             storageRows.addAll(deposit);
         }
         if (!withdraw.isEmpty()) {
             storageRows.add(new StorageRow(RowType.HEADER,
                     Component.translatable("gui.akashic_records.storage_stored", stored.size(), ClientStorage.capacity()),
-                    ItemStack.EMPTY, -1));
+                    ItemStack.EMPTY, -1, null));
             storageRows.addAll(withdraw);
+        }
+    }
+
+    /** Джерела для сітки крафту: предмети зі сховища та вивчені предмети (за бали Знань). */
+    private void buildCraftRows(String query) {
+        List<ItemStack> stored = ClientStorage.stacks();
+        List<StorageRow> fromStorage = new ArrayList<>();
+        for (int i = 0; i < stored.size(); i++) {
+            ItemStack stack = stored.get(i);
+            if (matchesStack(query, stack)) {
+                fromStorage.add(new StorageRow(RowType.SRC_STORE, null, stack, i, BuiltInRegistries.ITEM.getKey(stack.getItem())));
+            }
+        }
+
+        List<StorageRow> fromKnowledge = new ArrayList<>();
+        for (ResourceLocation key : ClientKnowledge.learned()) {
+            if (KnowledgeManager.getValue(key) <= 0 || !matches(query, key)) {
+                continue;
+            }
+            ItemStack stack = stackOf(key);
+            if (!stack.isEmpty()) {
+                fromKnowledge.add(new StorageRow(RowType.SRC_KNOW, null, stack, -1, key));
+            }
+        }
+        fromKnowledge.sort(Comparator.comparing(row -> nameOf(row.key())));
+
+        if (!fromStorage.isEmpty()) {
+            storageRows.add(new StorageRow(RowType.HEADER, Component.translatable("gui.akashic_records.craft_from_storage"),
+                    ItemStack.EMPTY, -1, null));
+            storageRows.addAll(fromStorage);
+        }
+        if (!fromKnowledge.isEmpty()) {
+            storageRows.add(new StorageRow(RowType.HEADER, Component.translatable("gui.akashic_records.craft_from_knowledge"),
+                    ItemStack.EMPTY, -1, null));
+            storageRows.addAll(fromKnowledge);
         }
     }
 
@@ -378,6 +525,8 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> {
 
         if (entry.kind() == Kind.STORAGE) {
             buildStorageRows(query);
+        } else if (entry.kind() == Kind.CRAFT) {
+            buildCraftRows(query);
         } else if (entry.kind() == Kind.LEARN) {
             Minecraft mc = this.minecraft;
             if (mc != null && mc.player != null) {
@@ -414,7 +563,7 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> {
 
     private int maxRightScroll() {
         int total = rightSize();
-        return Math.max(0, total - ROWS);
+        return Math.max(0, total - listRows());
     }
 
     @Override
@@ -422,6 +571,12 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> {
         super.containerTick();
         if (lastVersion != ClientKnowledge.version()) {
             rebuild();
+        } else if (craftMode()) {
+            recipeBookComponent.tick();
+            if (lastStorage != ClientStorage.stacks()) {
+                lastStorage = ClientStorage.stacks();
+                refreshShown();
+            }
         } else if (learnMode() || storageMode()) {
             refreshShown(); // інвентар або сховище могли змінитися
         }
@@ -442,8 +597,8 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> {
     /** Індекс у списку правої сторінки (shown або learnRows) або -1. */
     private int rightIndexAt(double mouseX, double mouseY) {
         double x = mouseX - leftPos - GRID_X;
-        double y = mouseY - topPos - GRID_Y;
-        if (x < 0 || y < 0 || y >= ROWS * CELL) {
+        double y = mouseY - topPos - listTop();
+        if (x < 0 || y < 0 || y >= listRows() * CELL) {
             return -1;
         }
         if (x >= COLS * CELL) {
@@ -505,8 +660,10 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> {
             renderSmallItem(g, entry.icon(), x0 + CAT_X + 2, y + 1);
 
             String count;
-            if (entry.kind() == Kind.LEARN) {
+            if (entry.kind() == Kind.LEARN || entry.kind() == Kind.CRAFT) {
                 count = "";
+            } else if (entry.kind() == Kind.NAV) {
+                count = ">";
             } else if (entry.kind() == Kind.STORAGE) {
                 count = ClientStorage.stacks().size() + "/" + ClientStorage.capacity();
             } else {
@@ -521,6 +678,13 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> {
         }
 
         renderScrollbar(g, x0 + CAT_X + CAT_W + 2, y0 + CAT_Y, CAT_ROWS * CAT_ROW_H, entries.size(), CAT_ROWS, catScroll);
+        if (entries.isEmpty()) {
+            int y = y0 + CAT_Y + 20;
+            for (FormattedCharSequence line : this.font.split(Component.translatable("gui.akashic_records.learned_empty"), CAT_W)) {
+                g.drawString(this.font, line, x0 + CAT_X, y, INK_MUTED, false);
+                y += 10;
+            }
+        }
     }
 
     private void renderRightPage(GuiGraphics g, int mouseX, int mouseY) {
@@ -534,19 +698,23 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> {
         }
         g.fill(x0 + GRID_X, y0 + 38, x0 + GRID_X + 124, y0 + 39, LINE);
 
+        if (craftMode()) {
+            renderCraftArea(g);
+        }
+
         int hovered = rightIndexAt(mouseX, mouseY);
         long points = ClientKnowledge.points();
 
         if (storageMode()) {
             renderStorageRows(g, hovered);
         } else if (learnMode()) {
-            for (int row = 0; row < ROWS; row++) {
+            for (int row = 0; row < listRows(); row++) {
                 int index = rightScroll + row;
                 if (index >= learnRows.size()) {
                     break;
                 }
                 LearnRow learnRow = learnRows.get(index);
-                int y = y0 + GRID_Y + row * CELL;
+                int y = y0 + listTop() + row * CELL;
                 int x = x0 + GRID_X;
 
                 g.fill(x, y, x + COLS * CELL, y + CELL - 1, CELL_BG);
@@ -563,20 +731,20 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> {
                 g.drawString(this.font, name, x + 22, y + 5, isNew ? INK_NEW : INK, false);
                 g.drawString(this.font, value, x + COLS * CELL - 3 - valueWidth, y + 5, INK_GOLD, false);
             }
-            renderScrollbar(g, x0 + GRID_X + COLS * CELL + 3, y0 + GRID_Y, ROWS * CELL, learnRows.size(), ROWS, rightScroll);
+            renderScrollbar(g, x0 + GRID_X + COLS * CELL + 3, y0 + listTop(), listRows() * CELL, learnRows.size(), listRows(), rightScroll);
             if (learnRows.isEmpty()) {
                 String key = search != null && !search.getValue().isEmpty()
                         ? "gui.akashic_records.nothing_found" : "gui.akashic_records.learn_empty";
                 renderCenteredText(g, Component.translatable(key));
             }
         } else {
-            for (int row = 0; row < ROWS; row++) {
+            for (int row = 0; row < listRows(); row++) {
                 int index = rightScroll + row;
                 if (index >= shown.size()) {
                     break;
                 }
                 ResourceLocation key = shown.get(index);
-                int y = y0 + GRID_Y + row * CELL;
+                int y = y0 + listTop() + row * CELL;
                 int x = x0 + GRID_X;
 
                 g.fill(x, y, x + COLS * CELL, y + CELL - 1, CELL_BG);
@@ -593,7 +761,7 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> {
                 g.drawString(this.font, name, x + 22, y + 5, affordable ? INK : INK_BAD, false);
                 g.drawString(this.font, cost, x + COLS * CELL - 3 - costWidth, y + 5, affordable ? INK_GOLD : INK_BAD, false);
             }
-            renderScrollbar(g, x0 + GRID_X + COLS * CELL + 3, y0 + GRID_Y, ROWS * CELL, shown.size(), ROWS, rightScroll);
+            renderScrollbar(g, x0 + GRID_X + COLS * CELL + 3, y0 + listTop(), listRows() * CELL, shown.size(), listRows(), rightScroll);
             if (shown.isEmpty()) {
                 String key = search != null && !search.getValue().isEmpty()
                         ? "gui.akashic_records.nothing_found" : "gui.akashic_records.empty";
@@ -602,17 +770,40 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> {
         }
     }
 
+    /** Рамки під сітку 3x3 і результат; самі предмети малюють комірки меню. */
+    private void renderCraftArea(GuiGraphics g) {
+        for (int row = 0; row < 3; row++) {
+            for (int col = 0; col < 3; col++) {
+                int sx = leftPos + AkashicMenu.GRID_SLOT_X - 1 + col * 18;
+                int sy = topPos + AkashicMenu.GRID_SLOT_Y - 1 + row * 18;
+                g.fill(sx, sy, sx + 18, sy + 18, CELL_BORDER);
+                g.fill(sx + 1, sy + 1, sx + 17, sy + 17, CELL_BG);
+            }
+        }
+        int rx = leftPos + AkashicMenu.RESULT_SLOT_X - 5;
+        int ry = topPos + AkashicMenu.RESULT_SLOT_Y - 5;
+        g.fill(rx, ry, rx + 26, ry + 26, CELL_BORDER);
+        g.fill(rx + 1, ry + 1, rx + 25, ry + 25, CELL_BG);
+
+        int ax = leftPos + 224;
+        int ay = topPos + 66;
+        g.fill(ax, ay + 2, ax + 12, ay + 4, INK_MUTED);
+        g.fill(ax + 10, ay, ax + 12, ay + 6, INK_MUTED);
+        g.fill(ax + 12, ay + 1, ax + 14, ay + 5, INK_MUTED);
+        g.fill(ax + 14, ay + 2, ax + 16, ay + 4, INK_MUTED);
+    }
+
     private void renderStorageRows(GuiGraphics g, int hovered) {
         int x = leftPos + GRID_X;
         int width = COLS * CELL;
 
-        for (int row = 0; row < ROWS; row++) {
+        for (int row = 0; row < listRows(); row++) {
             int index = rightScroll + row;
             if (index >= storageRows.size()) {
                 break;
             }
             StorageRow storageRow = storageRows.get(index);
-            int y = topPos + GRID_Y + row * CELL;
+            int y = topPos + listTop() + row * CELL;
 
             if (storageRow.type() == RowType.HEADER) {
                 g.drawString(this.font, this.font.plainSubstrByWidth(storageRow.header().getString(), width - 4),
@@ -628,17 +819,30 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> {
             ItemStack stack = storageRow.stack();
             g.renderItem(stack, x + 1, y + 1);
 
-            String count = "×" + Format.num(stack.getCount());
+            String count;
+            int nameColor = INK;
+            int countColor = INK_MUTED;
+            Component label = labelOf(stack);
+            if (storageRow.type() == RowType.SRC_KNOW) {
+                long value = KnowledgeManager.getValue(storageRow.key());
+                boolean affordable = value > 0 && value <= ClientKnowledge.points();
+                count = Format.num(value);
+                nameColor = affordable ? INK : INK_BAD;
+                countColor = affordable ? INK_GOLD : INK_BAD;
+            } else {
+                count = "×" + Format.num(stack.getCount());
+            }
             int countWidth = this.font.width(count);
-            String name = this.font.plainSubstrByWidth(labelOf(stack).getString(), width - 22 - countWidth - 6);
-            g.drawString(this.font, name, x + 22, y + 5, INK, false);
-            g.drawString(this.font, count, x + width - 3 - countWidth, y + 5, INK_MUTED, false);
+            String name = this.font.plainSubstrByWidth(label.getString(), width - 22 - countWidth - 6);
+            g.drawString(this.font, name, x + 22, y + 5, nameColor, false);
+            g.drawString(this.font, count, x + width - 3 - countWidth, y + 5, countColor, false);
         }
 
-        renderScrollbar(g, x + width + 3, topPos + GRID_Y, ROWS * CELL, storageRows.size(), ROWS, rightScroll);
+        renderScrollbar(g, x + width + 3, topPos + listTop(), listRows() * CELL, storageRows.size(), listRows(), rightScroll);
         if (storageRows.isEmpty()) {
             String key = search != null && !search.getValue().isEmpty()
-                    ? "gui.akashic_records.nothing_found" : "gui.akashic_records.storage_empty";
+                    ? "gui.akashic_records.nothing_found"
+                    : (craftMode() ? "gui.akashic_records.craft_empty" : "gui.akashic_records.storage_empty");
             renderCenteredText(g, Component.translatable(key));
         }
     }
@@ -652,6 +856,12 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> {
         if (row.type() == RowType.DEPOSIT) {
             lines.add(Component.translatable("gui.akashic_records.storage_deposit_hint", row.stack().getCount())
                     .withStyle(ChatFormatting.DARK_GRAY));
+        } else if (row.type() == RowType.SRC_STORE || row.type() == RowType.SRC_KNOW) {
+            if (row.type() == RowType.SRC_KNOW) {
+                lines.add(Component.translatable("gui.akashic_records.cost", Format.num(KnowledgeManager.getValue(row.key())))
+                        .withStyle(ChatFormatting.GOLD));
+            }
+            lines.add(Component.translatable("gui.akashic_records.craft_pick_hint").withStyle(ChatFormatting.DARK_GRAY));
         } else {
             lines.add(Component.translatable("gui.akashic_records.storage_withdraw_hint")
                     .withStyle(ChatFormatting.DARK_GRAY));
@@ -665,6 +875,16 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> {
             return;
         }
         ResourceLocation id = BuiltInRegistries.ITEM.getKey(row.stack().getItem());
+        if (row.type() == RowType.SRC_STORE || row.type() == RowType.SRC_KNOW) {
+            int max = Math.max(1, row.stack().getMaxStackSize());
+            int amount = button == 0 ? (hasShiftDown() ? max : 1) : Math.max(1, max / 2);
+            if (row.type() == RowType.SRC_STORE) {
+                PacketDistributor.sendToServer(new PickSourcePayload(true, id, row.ref(), amount));
+            } else {
+                PacketDistributor.sendToServer(new PickSourcePayload(false, row.key(), 0, amount));
+            }
+            return;
+        }
         if (row.type() == RowType.DEPOSIT) {
             if (button == 0) {
                 PacketDistributor.sendToServer(new StorageDepositPayload(row.ref(), id, hasShiftDown()));
@@ -684,7 +904,7 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> {
     private void renderCenteredText(GuiGraphics g, Component text) {
         List<FormattedCharSequence> lines = this.font.split(text, 116);
         int centerX = leftPos + GRID_X + (COLS * CELL) / 2;
-        int y = topPos + GRID_Y + 30;
+        int y = topPos + listTop() + 30;
         for (FormattedCharSequence line : lines) {
             g.drawString(this.font, line, centerX - this.font.width(line) / 2, y, INK_MUTED, false);
             y += 10;
@@ -743,6 +963,8 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> {
                 lines.add(Component.translatable("gui.akashic_records.click_hint").withStyle(ChatFormatting.DARK_GRAY));
                 g.renderComponentTooltip(this.font, lines, mouseX, mouseY);
             }
+        } else {
+            super.renderTooltip(g, mouseX, mouseY); // підказки предметів у комірках сітки
         }
     }
 
@@ -750,18 +972,84 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> {
 
     private void select(int index) {
         Entry entry = entries.get(index);
+        if (entry.kind() == Kind.NAV) { // сторінка «перегортається», ліворуч з'являються нові вкладки
+            playTurnSound();
+            Page target = entry.key().equals("nav:alchemy") ? Page.ALCHEMY : Page.LEARNED;
+            setPage(target);
+            return;
+        }
         if (!entry.key().equals(selectedKey)) {
             selectedKey = entry.key();
             rightScroll = 0;
             refreshShown();
-            if (this.minecraft != null) {
-                this.minecraft.getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.BOOK_PAGE_TURN, 1.0F));
-            }
+            relayout();
+            playTurnSound();
+        }
+    }
+
+    private void playTurnSound() {
+        if (this.minecraft != null) {
+            this.minecraft.getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.BOOK_PAGE_TURN, 1.0F));
         }
     }
 
     @Override
+    public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        if (!craftMode()) {
+            super.render(g, mouseX, mouseY, partialTick);
+            return;
+        }
+        if (recipeBookComponent.isVisible() && widthTooNarrow) {
+            this.renderBackground(g, mouseX, mouseY, partialTick);
+            recipeBookComponent.render(g, mouseX, mouseY, partialTick);
+        } else {
+            super.render(g, mouseX, mouseY, partialTick);
+            recipeBookComponent.render(g, mouseX, mouseY, partialTick);
+            recipeBookComponent.renderGhostRecipe(g, leftPos, topPos, true, partialTick);
+        }
+        recipeBookComponent.renderTooltip(g, leftPos, topPos, mouseX, mouseY);
+    }
+
+    @Override
+    protected void slotClicked(Slot slot, int slotId, int mouseButton, ClickType type) {
+        ClickType effective = type;
+        if (slot != null && craftMode() && slotId == 0 && type == ClickType.PICKUP) {
+            effective = ClickType.QUICK_MOVE; // результат одразу йде в інвентар
+        }
+        super.slotClicked(slot, slotId, mouseButton, effective);
+        if (craftMode()) {
+            recipeBookComponent.slotClicked(slot);
+        }
+    }
+
+    @Override
+    protected boolean hasClickedOutside(double mouseX, double mouseY, int guiLeft, int guiTop, int mouseButton) {
+        boolean outside = super.hasClickedOutside(mouseX, mouseY, guiLeft, guiTop, mouseButton);
+        if (craftMode()) {
+            return recipeBookComponent.hasClickedOutside(mouseX, mouseY, leftPos, topPos, imageWidth, imageHeight, mouseButton) && outside;
+        }
+        return outside;
+    }
+
+    @Override
+    public boolean charTyped(char codePoint, int modifiers) {
+        if (craftMode() && !(search != null && search.isFocused()) && recipeBookComponent.charTyped(codePoint, modifiers)) {
+            return true;
+        }
+        return super.charTyped(codePoint, modifiers);
+    }
+
+    @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (craftMode()) {
+            if (recipeBookComponent.mouseClicked(mouseX, mouseY, button)) {
+                setFocused(recipeBookComponent);
+                return true;
+            }
+            if (widthTooNarrow && recipeBookComponent.isVisible()) {
+                return true;
+            }
+        }
         if (button == 0) {
             int category = catIndexAt(mouseX, mouseY);
             if (category >= 0) {
@@ -813,6 +1101,9 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> {
         }
         if (search != null && search.isFocused()) {
             return search.keyPressed(keyCode, scanCode, modifiers) || search.canConsumeInput();
+        }
+        if (craftMode() && recipeBookComponent.keyPressed(keyCode, scanCode, modifiers)) {
+            return true;
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
     }

@@ -1,5 +1,6 @@
 package com.akashicrecords;
 
+import com.akashicrecords.data.AkashicClientConfig;
 import com.akashicrecords.data.AkashicConfig;
 import com.akashicrecords.data.ModAttachments;
 import com.akashicrecords.item.ModItems;
@@ -28,6 +29,7 @@ public class AkashicRecords {
         modBus.addListener(this::addCreative);
 
         container.registerConfig(ModConfig.Type.COMMON, AkashicConfig.SPEC);
+        container.registerConfig(ModConfig.Type.CLIENT, AkashicClientConfig.SPEC, "akashic_records-client.toml");
     }
 
     private void addCreative(BuildCreativeModeTabContentsEvent event) {

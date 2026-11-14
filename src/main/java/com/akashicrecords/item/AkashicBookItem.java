@@ -2,11 +2,14 @@ package com.akashicrecords.item;
 
 import com.akashicrecords.client.ClientKnowledge;
 import com.akashicrecords.client.Format;
+import com.akashicrecords.data.AkashicConfig;
 import com.akashicrecords.menu.AkashicMenu;
 import com.akashicrecords.network.ModNetwork;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResultHolder;
 import net.minecraft.world.SimpleMenuProvider;
@@ -32,6 +35,10 @@ public class AkashicBookItem extends Item {
                     Component.translatable("container.akashic_records.chronicles")));
             ModNetwork.syncKnowledge(serverPlayer);
             ModNetwork.syncStorage(serverPlayer);
+            if (AkashicConfig.UNLOCK_ALL_RECIPES.get()) {
+                serverPlayer.awardRecipes(serverPlayer.server.getRecipeManager().getRecipes());
+            }
+            level.playSound(null, serverPlayer.blockPosition(), SoundEvents.BOOK_PAGE_TURN, SoundSource.PLAYERS, 1.0F, 1.0F);
         }
         return InteractionResultHolder.sidedSuccess(stack, level.isClientSide());
     }

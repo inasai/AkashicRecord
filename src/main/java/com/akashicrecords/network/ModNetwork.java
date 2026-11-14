@@ -27,6 +27,7 @@ public final class ModNetwork {
         registrar.playToClient(SyncStoragePayload.TYPE, SyncStoragePayload.CODEC, SyncStoragePayload::handle);
         registrar.playToServer(StorageDepositPayload.TYPE, StorageDepositPayload.CODEC, StorageDepositPayload::handle);
         registrar.playToServer(StorageWithdrawPayload.TYPE, StorageWithdrawPayload.CODEC, StorageWithdrawPayload::handle);
+        registrar.playToServer(PickSourcePayload.TYPE, PickSourcePayload.CODEC, PickSourcePayload::handle);
     }
 
     public static void syncKnowledge(ServerPlayer player) {

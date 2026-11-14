@@ -28,5 +28,15 @@
   "gui.akashic_records.learn_hint": "LMB: learn 1, Shift+LMB: all (%s)",
   "gui.akashic_records.click_hint": "LMB: 1 item, Shift+LMB: stack, RMB: half a stack",
   "command.akashic_records.recalc": "Item values recalculated",
-  "command.akashic_records.add": "Added %s Knowledge"
+  "command.akashic_records.add": "Added %s Knowledge",
+  "gui.akashic_records.craft_tab": "Crafting",
+  "gui.akashic_records.alchemy_tab": "Alchemy",
+  "gui.akashic_records.learned_tab": "Learned",
+  "gui.akashic_records.learned_empty": "Nothing learned yet. Start with \"Learn an Item\" on the first page.",
+  "gui.akashic_records.craft_from_storage": "From storage",
+  "gui.akashic_records.craft_from_knowledge": "For Knowledge",
+  "gui.akashic_records.craft_empty": "No sources. Learn items or put them into storage.",
+  "gui.akashic_records.craft_pick_hint": "LMB: pick 1 to cursor, Shift+LMB: stack, RMB: half",
+  "gui.akashic_records.craft_missing": "Not enough ingredients in inventory, storage or Knowledge",
+  "gui.akashic_records.hud_no_value": "No value"
 }
