@@ -307,6 +307,7 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> implemen
         Set<ResourceLocation> itemKeys = new HashSet<>();
         List<ResourceLocation> potionKeys = new ArrayList<>();
         List<ResourceLocation> bookKeys = new ArrayList<>();
+        List<ResourceLocation> effectKeys = new ArrayList<>();
         for (ResourceLocation id : ClientKnowledge.learned()) {
             if (KnowledgeManager.getValue(id) <= 0) { // без цінності (наприклад, сама книга) не показуємо
                 continue;
@@ -318,6 +319,8 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> implemen
                 }
             } else if (variant.kind() == KnowledgeKeys.Kind.BOOK) {
                 bookKeys.add(id);
+            } else if (!variant.kind().isPotion()) { // стріли, юшка, зловісні пляшки
+                effectKeys.add(id);
             } else {
                 potionKeys.add(id);
             }
@@ -326,11 +329,13 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> implemen
         Comparator<ResourceLocation> byName = Comparator.comparing(this::nameOf);
         potionKeys.sort(byName);
         bookKeys.sort(byName);
+        effectKeys.sort(byName);
 
         entries.clear();
         List<ResourceLocation> all = new ArrayList<>(itemKeys);
         all.addAll(potionKeys);
         all.addAll(bookKeys);
+        all.addAll(effectKeys);
         all.sort(byName);
 
         if (page == Page.MAIN) {
@@ -351,6 +356,8 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> implemen
                     new ItemStack(Items.POTION), potionKeys));
             entries.add(new Entry("books", Kind.BOOKS, Component.translatable("gui.akashic_records.books_tab"),
                     new ItemStack(Items.ENCHANTED_BOOK), bookKeys));
+            entries.add(new Entry("effects", Kind.OTHER, Component.translatable("gui.akashic_records.effects_tab"),
+                    new ItemStack(Items.TIPPED_ARROW), effectKeys));
         } else {
             Set<ResourceLocation> inAnyTab = new HashSet<>();
             for (TabInfo tab : tabs) {
@@ -857,10 +864,6 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> implemen
             lines.add(Component.translatable("gui.akashic_records.storage_deposit_hint", row.stack().getCount())
                     .withStyle(ChatFormatting.DARK_GRAY));
         } else if (row.type() == RowType.SRC_STORE || row.type() == RowType.SRC_KNOW) {
-            if (row.type() == RowType.SRC_KNOW) {
-                lines.add(Component.translatable("gui.akashic_records.cost", Format.num(KnowledgeManager.getValue(row.key())))
-                        .withStyle(ChatFormatting.GOLD));
-            }
             lines.add(Component.translatable("gui.akashic_records.craft_pick_hint").withStyle(ChatFormatting.DARK_GRAY));
         } else {
             lines.add(Component.translatable("gui.akashic_records.storage_withdraw_hint")
@@ -958,8 +961,6 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> implemen
                 ResourceLocation key = shown.get(right);
                 ItemStack stack = stackOf(key);
                 List<Component> lines = new ArrayList<>(getTooltipFromItem(this.minecraft, stack));
-                lines.add(Component.translatable("gui.akashic_records.cost", Format.num(KnowledgeManager.getValue(key)))
-                        .withStyle(ChatFormatting.GOLD));
                 lines.add(Component.translatable("gui.akashic_records.click_hint").withStyle(ChatFormatting.DARK_GRAY));
                 g.renderComponentTooltip(this.font, lines, mouseX, mouseY);
             }

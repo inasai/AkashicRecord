@@ -32,6 +32,12 @@ public final class ClientSetup {
             if (value > 0) {
                 event.getToolTip().add(Component.translatable("gui.akashic_records.cost", Format.num(value))
                         .withStyle(ChatFormatting.GOLD));
+                int count = event.getItemStack().getCount(); // вартість поточної кількості
+                if (count > 1) {
+                    long stackValue = value > Long.MAX_VALUE / count ? Long.MAX_VALUE : value * count;
+                    event.getToolTip().add(Component.translatable("gui.akashic_records.stack_cost", Format.num(stackValue))
+                            .withStyle(ChatFormatting.GOLD));
+                }
             }
         }
     }

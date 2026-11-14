@@ -246,9 +246,9 @@ public class AkashicMenu extends RecipeBookMenu<CraftingInput, CraftingRecipe> {
         return KnowledgeKeys.keyOf(stack) != null;
     }
 
-    /** У сховище можна покласти те, що не можна вивчити, крім самої книги «Хроніки Акаши». */
+    /** У сховище можна покласти будь-що (і з цінністю, і з чарами), крім самої книги «Хроніки Акаши». */
     public static boolean canStore(ItemStack stack) {
-        return !stack.isEmpty() && !(stack.getItem() instanceof AkashicBookItem) && !canLearn(stack);
+        return !stack.isEmpty() && !(stack.getItem() instanceof AkashicBookItem);
     }
 
     /**

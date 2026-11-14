@@ -13,7 +13,10 @@ import net.minecraft.core.RegistryAccess;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.item.alchemy.Potion;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
@@ -46,6 +49,10 @@ import java.util.TreeMap;
 public final class KnowledgeManager {
     private static final String VALUES_DIR = "knowledge_values";
     private static final String POTIONS_DIR = "knowledge_potions";
+    private static final long POTION_BASE = 16;
+    private static final long SPLASH_BASE = 64;
+    private static final long LINGERING_BASE = 256;
+    private static final long STEW_VALUE = 86;
     private static volatile Map<Item, Long> VALUES = Map.of();
     /** Цінність варіантів (зілля, книги зачарувань) за ключами з {@link KnowledgeKeys}. */
     private static volatile Map<ResourceLocation, Long> VARIANTS = Map.of();
@@ -71,8 +78,7 @@ public final class KnowledgeManager {
             return 0L;
         }
         Item item = stack.getItem();
-        if (item == Items.ENCHANTED_BOOK || item == Items.POTION
-                || item == Items.SPLASH_POTION || item == Items.LINGERING_POTION) {
+        if (KnowledgeKeys.isVariantItem(item)) {
             ResourceLocation key = KnowledgeKeys.keyOf(stack);
             return key == null ? 0L : getValue(key);
         }
@@ -129,6 +135,9 @@ public final class KnowledgeManager {
         banned.add(Items.SPLASH_POTION);
         banned.add(Items.LINGERING_POTION);
         banned.add(Items.ENCHANTED_BOOK);
+        banned.add(Items.TIPPED_ARROW);
+        banned.add(Items.SUSPICIOUS_STEW);
+        banned.add(Items.OMINOUS_BOTTLE);
 
         if (!usedProjectE && AkashicConfig.DERIVE_FROM_RECIPES.get()) {
             deriveFromRecipes(server, values, fixed, banned);
@@ -140,6 +149,7 @@ public final class KnowledgeManager {
         Map<ResourceLocation, Long> variants = new HashMap<>();
         loadPotions(server, variants);
         computeBooks(server.registryAccess(), variants);
+        computeEffectItems(variants);
         VARIANTS = variants;
 
         AkashicRecords.LOGGER.info("[Akashic Records] Цінність визначено для {} предметів і {} варіантів (зілля, книги)",
@@ -156,6 +166,8 @@ public final class KnowledgeManager {
      */
     private static void loadPotions(MinecraftServer server, Map<ResourceLocation, Long> out) {
         Map<ResourceLocation, Long> base = new LinkedHashMap<>();
+        Map<ResourceLocation, Long> arrowTable = new LinkedHashMap<>();
+        Set<ResourceLocation> forbidden = new HashSet<>();
         long splashExtra = 64;
         long lingeringExtra = 64;
 
@@ -184,8 +196,18 @@ public final class KnowledgeManager {
                         long value = entry.getValue().getAsLong();
                         if (value <= 0) {
                             base.remove(id);
+                            forbidden.add(id);
                         } else {
                             base.put(id, value);
+                            forbidden.remove(id);
+                        }
+                    }
+                }
+                if (obj.has("arrows") && obj.get("arrows").isJsonObject()) {
+                    for (Map.Entry<String, JsonElement> entry : obj.getAsJsonObject("arrows").entrySet()) {
+                        ResourceLocation id = ResourceLocation.tryParse(entry.getKey());
+                        if (id != null && BuiltInRegistries.POTION.containsKey(id) && entry.getValue().getAsLong() > 0) {
+                            arrowTable.put(id, entry.getValue().getAsLong());
                         }
                     }
                 }
@@ -199,6 +221,56 @@ public final class KnowledgeManager {
             out.put(KnowledgeKeys.variantKey(KnowledgeKeys.Kind.POTION, entry.getKey(), 0), value);
             out.put(KnowledgeKeys.variantKey(KnowledgeKeys.Kind.SPLASH, entry.getKey(), 0), saturatedAdd(value, splashExtra));
             out.put(KnowledgeKeys.variantKey(KnowledgeKeys.Kind.LINGERING, entry.getKey(), 0), saturatedAdd(value, lingeringExtra));
+            out.put(KnowledgeKeys.variantKey(KnowledgeKeys.Kind.ARROW, entry.getKey(), 0),
+                    arrowTable.getOrDefault(entry.getKey(), 22 + Math.max(0, value - 1) / 8));
+        }
+
+        // Зілля без значення в таблиці (інших модів, нові) рахуються за формулою
+        long perMinute = AkashicConfig.POTION_EFFECT_BASE.get();
+        for (Map.Entry<ResourceKey<Potion>, Potion> entry : BuiltInRegistries.POTION.entrySet()) {
+            ResourceLocation id = entry.getKey().location();
+            if (base.containsKey(id) || forbidden.contains(id)) {
+                continue;
+            }
+            long effects = potionEffectsValue(entry.getValue(), perMinute);
+            if (effects <= 0) {
+                continue;
+            }
+            out.put(KnowledgeKeys.variantKey(KnowledgeKeys.Kind.POTION, id, 0), saturatedAdd(effects, POTION_BASE));
+            out.put(KnowledgeKeys.variantKey(KnowledgeKeys.Kind.SPLASH, id, 0), saturatedAdd(effects, SPLASH_BASE));
+            out.put(KnowledgeKeys.variantKey(KnowledgeKeys.Kind.LINGERING, id, 0), saturatedAdd(effects, LINGERING_BASE));
+            out.put(KnowledgeKeys.variantKey(KnowledgeKeys.Kind.ARROW, id, 0),
+                    arrowTable.getOrDefault(id, 22 + saturatedAdd(effects, POTION_BASE - 1) / 8));
+        }
+    }
+
+    /**
+     * Формула для зілля без значення в таблиці: за кожен ефект базова вартість за хвилину (з округленням вгору),
+     * подвоєна за кожен рівень підсилювача; миттєві ефекти вважаються за одну хвилину.
+     * До результату додається база різновиду: зілля 16, вибухове 64, осідальне 256.
+     */
+    private static long potionEffectsValue(Potion potion, long perMinute) {
+        long total = 0;
+        for (MobEffectInstance effect : potion.getEffects()) {
+            long minutes = effect.getEffect().value().isInstantenous()
+                    ? 1
+                    : Math.max(1, (effect.getDuration() + 1199) / 1200);
+            long value = perMinute * minutes;
+            int amplifier = Math.min(Math.max(effect.getAmplifier(), 0), 20);
+            total = saturatedAdd(total, value << amplifier);
+        }
+        return total;
+    }
+
+    /** Підозріле рагу (будь-який ефект) і зловісні пляшки (рівні 0..4). */
+    private static void computeEffectItems(Map<ResourceLocation, Long> out) {
+        for (ResourceLocation effectId : BuiltInRegistries.MOB_EFFECT.keySet()) {
+            out.put(KnowledgeKeys.variantKey(KnowledgeKeys.Kind.STEW, effectId, 0), STEW_VALUE);
+        }
+        long base = AkashicConfig.OMINOUS_BOTTLE_BASE.get();
+        ResourceLocation bottle = BuiltInRegistries.ITEM.getKey(Items.OMINOUS_BOTTLE);
+        for (int level = 0; level <= 4; level++) {
+            out.put(KnowledgeKeys.variantKey(KnowledgeKeys.Kind.OMINOUS, bottle, level), base << level);
         }
     }
 

@@ -8,9 +8,11 @@ import com.akashicrecords.menu.ModMenus;
 import com.akashicrecords.network.ModNetwork;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.api.distmarker.Dist;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
+import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
 import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
@@ -30,6 +32,9 @@ public class AkashicRecords {
 
         container.registerConfig(ModConfig.Type.COMMON, AkashicConfig.SPEC);
         container.registerConfig(ModConfig.Type.CLIENT, AkashicClientConfig.SPEC, "akashic_records-client.toml");
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            com.akashicrecords.client.ClientConfigScreen.register(container);
+        }
     }
 
     private void addCreative(BuildCreativeModeTabContentsEvent event) {

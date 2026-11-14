@@ -15,6 +15,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.alchemy.Potion;
 import net.minecraft.world.item.alchemy.PotionContents;
+import net.minecraft.world.item.component.SuspiciousStewEffects;
+import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.ItemEnchantments;
 
@@ -29,7 +31,10 @@ import java.util.Set;
  * ключ варіанта в просторі імен мода:
  * <ul>
  *   <li>akashic_records:potion/minecraft/healing (так само splash_potion і lingering_potion);</li>
- *   <li>akashic_records:book/minecraft/sharpness/3 (книга з одним зачаруванням і рівнем).</li>
+ *   <li>akashic_records:book/minecraft/sharpness/3 (книга з одним зачаруванням і рівнем);</li>
+ *   <li>akashic_records:tipped_arrow/minecraft/healing (стріла із зіллям);</li>
+ *   <li>akashic_records:suspicious_stew/minecraft/blindness (підозріле рагу з одним ефектом);</li>
+ *   <li>akashic_records:ominous_bottle/minecraft/ominous_bottle/2 (зловісна пляшка з рівнем 0..4).</li>
  * </ul>
  */
 public final class KnowledgeKeys {
@@ -38,6 +43,9 @@ public final class KnowledgeKeys {
         POTION("potion"),
         SPLASH("splash_potion"),
         LINGERING("lingering_potion"),
+        ARROW("tipped_arrow"),
+        STEW("suspicious_stew"),
+        OMINOUS("ominous_bottle"),
         BOOK("book");
 
         public final String prefix;
@@ -56,7 +64,12 @@ public final class KnowledgeKeys {
         }
 
         public boolean isPotion() {
-            return this != BOOK;
+            return this == POTION || this == SPLASH || this == LINGERING;
+        }
+
+        /** Ключ містить ще й рівень (книги, зловісні пляшки). */
+        public boolean hasLevel() {
+            return this == BOOK || this == OMINOUS;
         }
     }
 
@@ -71,7 +84,7 @@ public final class KnowledgeKeys {
 
     public static ResourceLocation variantKey(Kind kind, ResourceLocation id, int level) {
         String path = kind.prefix + "/" + id.getNamespace() + "/" + id.getPath();
-        if (kind == Kind.BOOK) {
+        if (kind.hasLevel()) {
             path += "/" + level;
         }
         return ResourceLocation.fromNamespaceAndPath(AkashicRecords.MODID, path);
@@ -94,7 +107,7 @@ public final class KnowledgeKeys {
 
         String rest = path.substring(first + 1);
         int level = 0;
-        if (kind == Kind.BOOK) {
+        if (kind.hasLevel()) {
             int last = rest.lastIndexOf('/');
             if (last < 0) {
                 return null;
@@ -132,6 +145,15 @@ public final class KnowledgeKeys {
         if (item == Items.ENCHANTED_BOOK) {
             return bookKey(stack);
         }
+        if (item == Items.TIPPED_ARROW) {
+            return potionKey(stack, Kind.ARROW);
+        }
+        if (item == Items.SUSPICIOUS_STEW) {
+            return stewKey(stack);
+        }
+        if (item == Items.OMINOUS_BOTTLE) {
+            return ominousKey(stack);
+        }
         Kind potionKind = potionKind(item);
         if (potionKind != null) {
             return potionKey(stack, potionKind);
@@ -140,6 +162,35 @@ public final class KnowledgeKeys {
             return null;
         }
         return KnowledgeManager.getValue(item) > 0 ? BuiltInRegistries.ITEM.getKey(item) : null;
+    }
+
+    /** Предмети, цінність яких залежить від даних: їх оцінюють лише як варіанти. */
+    public static boolean isVariantItem(Item item) {
+        return item == Items.ENCHANTED_BOOK || item == Items.POTION || item == Items.SPLASH_POTION
+                || item == Items.LINGERING_POTION || item == Items.TIPPED_ARROW
+                || item == Items.SUSPICIOUS_STEW || item == Items.OMINOUS_BOTTLE;
+    }
+
+    private static ResourceLocation stewKey(ItemStack stack) {
+        SuspiciousStewEffects effects = stack.get(DataComponents.SUSPICIOUS_STEW_EFFECTS);
+        if (effects == null || effects.effects().size() != 1 || !onlyHasExtra(stack, DataComponents.SUSPICIOUS_STEW_EFFECTS)) {
+            return null;
+        }
+        ResourceLocation effectId = effects.effects().get(0).effect().unwrapKey().map(ResourceKey::location).orElse(null);
+        if (effectId == null) {
+            return null;
+        }
+        ResourceLocation key = variantKey(Kind.STEW, effectId, 0);
+        return KnowledgeManager.getValue(key) > 0 ? key : null;
+    }
+
+    private static ResourceLocation ominousKey(ItemStack stack) {
+        if (!onlyHasExtra(stack, DataComponents.OMINOUS_BOTTLE_AMPLIFIER)) {
+            return null;
+        }
+        Integer amplifier = stack.get(DataComponents.OMINOUS_BOTTLE_AMPLIFIER);
+        ResourceLocation key = variantKey(Kind.OMINOUS, BuiltInRegistries.ITEM.getKey(Items.OMINOUS_BOTTLE), amplifier == null ? 0 : amplifier);
+        return KnowledgeManager.getValue(key) > 0 ? key : null;
     }
 
     private static Kind potionKind(Item item) {
@@ -214,12 +265,29 @@ public final class KnowledgeKeys {
             return item == null || item == Items.AIR ? ItemStack.EMPTY : new ItemStack(item);
         }
 
-        if (variant.kind().isPotion()) {
+        if (variant.kind() == Kind.STEW) {
+            Holder<MobEffect> effect = BuiltInRegistries.MOB_EFFECT.getHolder(variant.id()).orElse(null);
+            if (effect == null) {
+                return ItemStack.EMPTY;
+            }
+            ItemStack stack = new ItemStack(Items.SUSPICIOUS_STEW);
+            stack.set(DataComponents.SUSPICIOUS_STEW_EFFECTS,
+                    new SuspiciousStewEffects(List.of(new SuspiciousStewEffects.Entry(effect, 160))));
+            return stack;
+        }
+
+        if (variant.kind() == Kind.OMINOUS) {
+            ItemStack stack = new ItemStack(Items.OMINOUS_BOTTLE);
+            stack.set(DataComponents.OMINOUS_BOTTLE_AMPLIFIER, variant.level());
+            return stack;
+        }
+
+        if (variant.kind() != Kind.BOOK) {
             Holder<Potion> potion = BuiltInRegistries.POTION.getHolder(variant.id()).orElse(null);
             if (potion == null) {
                 return ItemStack.EMPTY;
             }
-            ItemStack stack = new ItemStack(potionItem(variant.kind()));
+            ItemStack stack = new ItemStack(variant.kind() == Kind.ARROW ? Items.TIPPED_ARROW : potionItem(variant.kind()));
             stack.set(DataComponents.POTION_CONTENTS, new PotionContents(Optional.of(potion), Optional.empty(), List.of()));
             return stack;
         }
