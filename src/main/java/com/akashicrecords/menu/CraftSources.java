@@ -79,6 +79,14 @@ public final class CraftSources {
         }
     }
 
+    /** Клієнт: чи вистачає інгредієнтів з інвентаря, сховища та Знань (для EMI та JEI). */
+    public static boolean canCraftClient(Player player, Recipe<?> recipe) {
+        StackedContents contents = new StackedContents();
+        player.getInventory().fillStackedContents(contents);
+        fillStackedContents(player, contents);
+        return contents.canCraft(recipe, null);
+    }
+
     // ------------------------------------------------------------------ сервер
 
     private record Cand(int kind, int ref, ItemStack proto, long cost) {

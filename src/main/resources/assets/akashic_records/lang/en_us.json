@@ -109,5 +109,6 @@
   "gui.akashic_records.mode_store_desc": "An item put into the grid goes into storage",
   "gui.akashic_records.mode_hint": "Shift+RMB on an inventory item does the same",
   "gui.akashic_records.sort_scope": "Sorts learned items and items in storage",
-  "gui.akashic_records.demon_cannot_learn": "This item cannot be learned. Switch the mode to Remember"
+  "gui.akashic_records.demon_cannot_learn": "This item cannot be learned. Switch the mode to Remember",
+  "gui.akashic_records.craft_open_tab": "Open the Crafting tab"
 }

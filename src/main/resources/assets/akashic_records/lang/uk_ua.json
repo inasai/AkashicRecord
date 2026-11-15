@@ -109,5 +109,6 @@
   "gui.akashic_records.mode_store_desc": "Предмет у сітці переходить на зберігання у сховище",
   "gui.akashic_records.mode_hint": "Shift+ПКМ по предмету в інвентарі діє так само",
   "gui.akashic_records.sort_scope": "Сортуються вивчені предмети та предмети зі сховища",
-  "gui.akashic_records.demon_cannot_learn": "Цей предмет не можна вивчити. Перемкніть режим на «Запам'ятати»"
+  "gui.akashic_records.demon_cannot_learn": "Цей предмет не можна вивчити. Перемкніть режим на «Запам'ятати»",
+  "gui.akashic_records.craft_open_tab": "Відкрийте закладку «Створення»"
 }

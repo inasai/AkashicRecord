@@ -29,6 +29,7 @@ public final class ModNetwork {
         registrar.playToServer(StorageWithdrawPayload.TYPE, StorageWithdrawPayload.CODEC, StorageWithdrawPayload::handle);
         registrar.playToServer(PickSourcePayload.TYPE, PickSourcePayload.CODEC, PickSourcePayload::handle);
         registrar.playToServer(OpenDemonPayload.TYPE, OpenDemonPayload.CODEC, OpenDemonPayload::handle);
+        registrar.playToServer(FillRecipePayload.TYPE, FillRecipePayload.CODEC, FillRecipePayload::handle);
         registrar.playToServer(InsertPayload.TYPE, InsertPayload.CODEC, InsertPayload::handle);
         registrar.playToServer(LearnCursorPayload.TYPE, LearnCursorPayload.CODEC, LearnCursorPayload::handle);
     }

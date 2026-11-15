@@ -35,10 +35,22 @@ neoForge {
 
 repositories {
     mavenCentral()
+    maven {
+        name = 'BlameJared'
+        url = 'https://maven.blamejared.com/'
+    }
+    maven {
+        name = 'TerraformersMC'
+        url = 'https://maven.terraformersmc.com/'
+    }
 }
 
 dependencies {
-    // ProjectE підключається лише через рефлексію (необов'язкова залежність), тому тут нічого не потрібно.
+    // ProjectE підключається лише через рефлексію (необов'язкова залежність).
+    // JEI та EMI потрібні лише для компіляції плагінів (compileOnly); у грі мод працює і без них.
+    // Якщо Gradle не знаходить версію, змініть її на актуальну для Minecraft 1.21.1.
+    compileOnly "mezz.jei:jei-1.21.1-neoforge-api:19.21.0.247"
+    compileOnly "dev.emi:emi-neoforge:1.1.22+1.21.1"
 }
 
 // Підставляє значення з gradle.properties у ${...} у neoforge.mods.toml
