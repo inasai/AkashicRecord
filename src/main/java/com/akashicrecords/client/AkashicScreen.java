@@ -78,22 +78,22 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> implemen
     private static final int CELL = 18;
 
     // Кольори
-    private static final int COVER_OUTER = 0xFF2B170B;
-    private static final int COVER_INNER = 0xFF54301A;
-    private static final int SPINE = 0xFF3A2112;
-    private static final int PAGE = 0xFFEADBB5;
-    private static final int PAGE_SHADE_1 = 0xFFE0CFA2;
-    private static final int PAGE_SHADE_2 = 0xFFD3BF8C;
-    private static final int INK = 0xFF3B2A1A;
-    private static final int INK_MUTED = 0xFF8A7757;
-    private static final int INK_GOLD = 0xFF8A5A00;
-    private static final int INK_NEW = 0xFF1F7A2A;
-    private static final int INK_BAD = 0xFF9A2A2A;
-    private static final int LINE = 0xFF9C8658;
-    private static final int SELECT_BG = 0xFFD2BB80;
+    private static final int COVER_OUTER = 0xFF0A171E;
+    private static final int COVER_INNER = 0xFF243747;
+    private static final int SPINE = 0xFF2B2A46;
+    private static final int PAGE = 0xFFD3F1EF;
+    private static final int PAGE_SHADE_1 = 0xFFC0E4E3;
+    private static final int PAGE_SHADE_2 = 0xFFA9D2D1;
+    private static final int INK = 0xFF1A2733;
+    private static final int INK_MUTED = 0xFF4A6676;
+    private static final int INK_GOLD = 0xFF1F6F72;
+    private static final int INK_NEW = 0xFF1F7A5A;
+    private static final int INK_BAD = 0xFF8A2F4A;
+    private static final int LINE = 0xFF7FB3B0;
+    private static final int SELECT_BG = 0xFF9CD6D3;
     private static final int HOVER_BG = 0x30000000;
-    private static final int CELL_BORDER = 0xFFB9A474;
-    private static final int CELL_BG = 0xFFDCCB9C;
+    private static final int CELL_BORDER = 0xFF62A096;
+    private static final int CELL_BG = 0xFFBFE3E3;
 
     /** Сторінки книги: головна, «Алхімія», «Вивчене». Перемикаються стрілками внизу. */
     private enum Page { MAIN, ALCHEMY, LEARNED }
@@ -1042,6 +1042,9 @@ public class AkashicScreen extends AbstractContainerScreen<AkashicMenu> implemen
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (search != null && search.isFocused() && !search.isMouseOver(mouseX, mouseY)) {
+            search.setFocused(false); // клік поза полем пошуку знімає з нього фокус
+        }
         if (craftMode()) {
             if (recipeBookComponent.mouseClicked(mouseX, mouseY, button)) {
                 setFocused(recipeBookComponent);

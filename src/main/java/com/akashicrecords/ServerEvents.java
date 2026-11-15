@@ -11,6 +11,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 
@@ -30,6 +31,14 @@ public final class ServerEvents {
             ModNetwork.syncValues(player);
             ModNetwork.syncKnowledge(player);
             ModNetwork.syncStorage(player);
+        }
+    }
+
+    /** Піч «Демона Лапласа» працює, поки гравець у грі, навіть із закритим вікном. */
+    @SubscribeEvent
+    public static void onPlayerTick(PlayerTickEvent.Post event) {
+        if (event.getEntity() instanceof ServerPlayer player && player.hasData(ModAttachments.FURNACE)) {
+            player.getData(ModAttachments.FURNACE).tick(player.level());
         }
     }
 

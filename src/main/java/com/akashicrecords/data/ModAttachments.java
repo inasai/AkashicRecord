@@ -23,6 +23,19 @@ public final class ModAttachments {
                     .copyOnDeath()
                     .build());
 
+    public static final Supplier<AttachmentType<DemonFurnace>> FURNACE = ATTACHMENTS.register("demon_furnace",
+            () -> AttachmentType.builder(() -> new DemonFurnace())
+                    .serialize(DemonFurnace.CODEC)
+                    .copyOnDeath()
+                    .build());
+
+    /** Застаріле окреме вмістилище; його вміст переноситься у загальне сховище при відкритті «Демона Лапласа». */
+    public static final Supplier<AttachmentType<StorageData>> VAULT = ATTACHMENTS.register("demon_vault",
+            () -> AttachmentType.builder(() -> new StorageData())
+                    .serialize(StorageData.CODEC)
+                    .copyOnDeath()
+                    .build());
+
     private ModAttachments() {
     }
 }

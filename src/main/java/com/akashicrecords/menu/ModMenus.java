@@ -14,6 +14,9 @@ public final class ModMenus {
     public static final Supplier<MenuType<AkashicMenu>> AKASHIC = MENUS.register("akashic",
             () -> new MenuType<>(AkashicMenu::new, FeatureFlags.DEFAULT_FLAGS));
 
+    public static final Supplier<MenuType<DemonMenu>> DEMON = MENUS.register("demon",
+            () -> new MenuType<>(DemonMenu::new, FeatureFlags.DEFAULT_FLAGS));
+
     private ModMenus() {
     }
 }

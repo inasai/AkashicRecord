@@ -44,7 +44,7 @@ public final class AkashicConfig {
                 .comment("Відкривати гравцю всі рецепти верстака, коли він відкриває книгу,",
                         "щоб книга рецептів на сторінці «Створення» показувала їх усі (як JEI).")
                 .translation("akashic_records.configuration.unlockAllRecipes")
-                .define("unlockAllRecipes", true);
+                .define("unlockAllRecipes", false);
 
         POTION_EFFECT_BASE = b
                 .comment("Зілля без значення в таблиці (інших модів) рахуються за формулою:",

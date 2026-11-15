@@ -40,6 +40,10 @@ public class AkashicRecords {
     private void addCreative(BuildCreativeModeTabContentsEvent event) {
         if (event.getTabKey() == CreativeModeTabs.TOOLS_AND_UTILITIES) {
             event.accept(ModItems.AKASHIC_BOOK.get());
+            event.accept(ModItems.LAPLACE_APPLE.get());
+        }
+        if (event.getTabKey() == CreativeModeTabs.FOOD_AND_DRINKS) {
+            event.accept(ModItems.LAPLACE_APPLE.get());
         }
     }
 }

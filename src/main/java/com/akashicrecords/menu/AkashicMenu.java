@@ -50,22 +50,31 @@ public class AkashicMenu extends RecipeBookMenu<CraftingInput, CraftingRecipe> {
     public static final int RESULT_SLOT_X = 250;
     public static final int RESULT_SLOT_Y = 61;
 
-    private static final int RESULT_SLOT = 0;
-    private static final int INV_START = 10;
-    private static final int INV_END = 46;
+    protected static final int RESULT_SLOT = 0;
+    protected static final int INV_START = 10;
+    protected static final int INV_END = 46;
 
-    private final TransientCraftingContainer craftSlots = new TransientCraftingContainer(this, 3, 3);
+    protected final TransientCraftingContainer craftSlots = new TransientCraftingContainer(this, 3, 3);
     private final ResultContainer resultSlots = new ResultContainer();
-    private final Player player;
+    protected final Player player;
 
     /** Лише клієнт: чи відкрита сторінка «Створення» (від цього залежить, чи видно комірки). */
     public boolean craftingPage;
 
+    /** Розкладка комірок: сітка, результат і (за потреби) видимий інвентар. */
+    public record Layout(int gridX, int gridY, int resultX, int resultY, int invX, int invY, boolean showInventory) {
+        public static final Layout BOOK = new Layout(GRID_SLOT_X, GRID_SLOT_Y, RESULT_SLOT_X, RESULT_SLOT_Y, 0, 0, false);
+    }
+
     public AkashicMenu(int containerId, Inventory inventory) {
-        super(ModMenus.AKASHIC.get(), containerId);
+        this(ModMenus.AKASHIC.get(), containerId, inventory, Layout.BOOK);
+    }
+
+    protected AkashicMenu(net.minecraft.world.inventory.MenuType<?> type, int containerId, Inventory inventory, Layout layout) {
+        super(type, containerId);
         this.player = inventory.player;
 
-        this.addSlot(new ResultSlot(inventory.player, this.craftSlots, this.resultSlots, 0, RESULT_SLOT_X, RESULT_SLOT_Y) {
+        this.addSlot(new ResultSlot(inventory.player, this.craftSlots, this.resultSlots, 0, layout.resultX(), layout.resultY()) {
             @Override
             public boolean isActive() {
                 return craftingPage;
@@ -73,7 +82,7 @@ public class AkashicMenu extends RecipeBookMenu<CraftingInput, CraftingRecipe> {
         });
         for (int row = 0; row < 3; row++) {
             for (int col = 0; col < 3; col++) {
-                this.addSlot(new Slot(this.craftSlots, col + row * 3, GRID_SLOT_X + col * 18, GRID_SLOT_Y + row * 18) {
+                this.addSlot(new Slot(this.craftSlots, col + row * 3, layout.gridX() + col * 18, layout.gridY() + row * 18) {
                     @Override
                     public boolean isActive() {
                         return craftingPage;
@@ -83,18 +92,19 @@ public class AkashicMenu extends RecipeBookMenu<CraftingInput, CraftingRecipe> {
         }
         // Інвентар: спершу основні 27 комірок, потім панель швидкого доступу (як у верстака)
         for (int i = 9; i < 36; i++) {
-            this.addSlot(hiddenSlot(inventory, i));
+            this.addSlot(inventorySlot(inventory, i, layout, layout.invX() + (i % 9) * 18, layout.invY() + (i / 9 - 1) * 18));
         }
         for (int i = 0; i < 9; i++) {
-            this.addSlot(hiddenSlot(inventory, i));
+            this.addSlot(inventorySlot(inventory, i, layout, layout.invX() + i * 18, layout.invY() + 58));
         }
     }
 
-    private static Slot hiddenSlot(Inventory inventory, int index) {
-        return new Slot(inventory, index, 0, 0) {
+    private static Slot inventorySlot(Inventory inventory, int index, Layout layout, int x, int y) {
+        boolean visible = layout.showInventory();
+        return new Slot(inventory, index, x, y) {
             @Override
             public boolean isActive() {
-                return false;
+                return visible;
             }
         };
     }
@@ -316,6 +326,27 @@ public class AkashicMenu extends RecipeBookMenu<CraftingInput, CraftingRecipe> {
         ModNetwork.syncKnowledge(serverPlayer);
     }
 
+    /** Вивчає предмет, що лежить на курсорі (весь стак або 1 шт.). */
+    public void learnCarried(ServerPlayer serverPlayer, boolean all) {
+        ItemStack carried = getCarried();
+        ResourceLocation key = KnowledgeKeys.keyOf(carried);
+        if (key == null) {
+            return;
+        }
+        long value = KnowledgeManager.getValue(key);
+        if (value <= 0) {
+            return;
+        }
+        int count = all ? carried.getCount() : 1;
+        KnowledgeData data = serverPlayer.getData(ModAttachments.KNOWLEDGE);
+        data.addPoints(saturatedMul(value, count));
+        data.learn(key);
+        carried.shrink(count);
+        setCarried(carried.isEmpty() ? ItemStack.EMPTY : carried);
+        playBookSound(serverPlayer, SoundEvents.BOOK_PUT, 1.0F);
+        ModNetwork.syncKnowledge(serverPlayer);
+    }
+
     /** Кладе предмет з комірки інвентаря у сховище (1 шт. або всі такі самі). */
     public void deposit(ServerPlayer serverPlayer, int slot, ResourceLocation id, boolean all) {
         Inventory inventory = serverPlayer.getInventory();
@@ -449,11 +480,11 @@ public class AkashicMenu extends RecipeBookMenu<CraftingInput, CraftingRecipe> {
         return carried.copyWithCount(carried.getCount() + added.getCount());
     }
 
-    private static void playBookSound(ServerPlayer serverPlayer, net.minecraft.sounds.SoundEvent sound, float pitch) {
+    protected static void playBookSound(ServerPlayer serverPlayer, net.minecraft.sounds.SoundEvent sound, float pitch) {
         serverPlayer.level().playSound(null, serverPlayer.blockPosition(), sound, SoundSource.PLAYERS, 0.8F, pitch);
     }
 
-    private static long saturatedMul(long a, long b) {
+    protected static long saturatedMul(long a, long b) {
         try {
             return Math.multiplyExact(a, b);
         } catch (ArithmeticException e) {

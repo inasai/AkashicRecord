@@ -32,7 +32,7 @@ import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
  * HUD, поки гравець тримає книгу: рамка з досягнень, голова гравця, ім'я та Знання;
  * нижче менший такий самий HUD для предмета, на який наведено приціл.
  */
-@EventBusSubscriber(modid = AkashicRecords.MODID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
+@EventBusSubscriber(modid = AkashicRecords.MODID, value = Dist.CLIENT)
 public final class KnowledgeHud {
     private static final ResourceLocation FRAME = ResourceLocation.withDefaultNamespace("advancements/task_frame_obtained");
     private static final ResourceLocation ORB = ResourceLocation.withDefaultNamespace("textures/entity/experience_orb.png");

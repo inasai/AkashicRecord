@@ -1,0 +1,24 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "WAW",
+    "APA",
+    "WAW"
+  ],
+  "key": {
+    "W": {
+      "item": "minecraft:wither_skeleton_skull"
+    },
+    "A": {
+      "item": "akashic_records:akashic_chronicles"
+    },
+    "P": {
+      "item": "minecraft:apple"
+    }
+  },
+  "result": {
+    "count": 1,
+    "id": "akashic_records:laplace_apple"
+  }
+}
